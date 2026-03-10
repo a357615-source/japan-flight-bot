@@ -3,56 +3,39 @@ import os
 import json
 from datetime import datetime
 
-# --- 專業對照表 (確保顯示中文名稱) ---
+# --- 專屬對照表 (僅保留桃園、成田) ---
 AIRLINE_NAMES = {"GK": "捷星日本 (GK)", "3K": "捷星亞洲 (3K)", "JQ": "捷星航空 (JQ)"}
-AIRPORT_NAMES = {"TPE": "台北桃園", "NRT": "東京成田", "HND": "東京羽田", "KIX": "大阪關西"}
+AIRPORT_NAMES = {"TPE": "桃園", "NRT": "成田"}
 AIRCRAFT_MODELS = {"320": "A320", "321": "A321", "32Q": "A321neo", "788": "B787-8"}
 FREE_QUOTA_LIMIT = 2000 
 
 def send_line_push(text_content):
-    """使用 LINE Messaging API 推送格式化報表"""
     token = os.getenv('LINE_CHANNEL_ACCESS_TOKEN')
     user_id = os.getenv('LINE_USER_ID')
-    if not token or not user_id:
-        print("❌ 錯誤：找不到 LINE 金鑰或 User ID")
-        return
-
+    if not token or not user_id: return
     url = "https://api.line.me/v2/bot/message/push"
     headers = {"Content-Type": "application/json", "Authorization": f"Bearer {token}"}
     payload = {"to": user_id, "messages": [{"type": "text", "text": text_content}]}
-    
     try:
         res = requests.post(url, headers=headers, data=json.dumps(payload), timeout=10)
-        if res.status_code == 200:
-            print("✅ LINE 報表推播成功！")
-        else:
-            print(f"⚠️ LINE 推送失敗: {res.text}")
-    except Exception as e:
-        print(f"❌ LINE 連線異常: {e}")
+        print(f"✅ LINE 發送狀態: {res.status_code}")
+    except: print("❌ LINE 發送失敗")
 
 def get_amadeus_token():
-    """取得 Amadeus Sandbox Token"""
     key = os.getenv('AMADEUS_KEY')
     secret = os.getenv('AMADEUS_SECRET')
-    # ⚠️ 目前使用 Sandbox 測試網址
+    # ⚠️ 目前為 Sandbox 環境，正式金鑰請移除 'test.'
     auth_url = "https://test.api.amadeus.com/v1/security/oauth2/token"
     try:
-        res = requests.post(auth_url, data={
-            "grant_type": "client_credentials",
-            "client_id": key,
-            "client_secret": secret
-        }, timeout=10)
+        res = requests.post(auth_url, data={"grant_type": "client_credentials", "client_id": key, "client_secret": secret}, timeout=10)
         return res.json().get("access_token")
-    except:
-        return None
+    except: return None
 
 def check_flights():
     token = get_amadeus_token()
-    if not token:
-        print("❌ 無法取得 Amadeus Token")
-        return 
+    if not token: return 
 
-    # 監控的 8 組日期組合
+    # 監控日期組合 (2026年5月)
     date_pairs = [
         ("2026-05-19", "2026-06-03"), ("2026-05-19", "2026-06-05"),
         ("2026-05-20", "2026-06-03"), ("2026-05-20", "2026-06-05"),
@@ -61,14 +44,14 @@ def check_flights():
     ]
 
     now_str = datetime.now().strftime("%H:%M")
-    report = f"🚀【捷星黃金時段 - 精準報表 {now_str}】\n"
-    report += "----------------------------"
+    report = f"🚀【捷星黃金時段監控 {now_str}】\n"
+    report += "━━━━━━━━━━━━━━"
     
     found_any = False
     query_count = 0
     
     for dep, ret in date_pairs:
-        # ⚠️ 目前使用 Sandbox 測試網址
+        # ⚠️ 目前為 Sandbox 環境
         url = "https://test.api.amadeus.com/v2/shopping/flight-offers"
         params = {
             "originLocationCode": "TPE", "destinationLocationCode": "NRT",
@@ -84,36 +67,38 @@ def check_flights():
                 dep_seg = flight["itineraries"][0]["segments"][0]
                 ret_seg = flight["itineraries"][1]["segments"][0]
                 
-                # 機場、航空、機型解析
+                # 資料擷取與轉換
+                dep_short, ret_short = dep[5:], ret[5:]
                 origin = AIRPORT_NAMES.get(dep_seg["departure"]["iataCode"], dep_seg["departure"]["iataCode"])
                 dest = AIRPORT_NAMES.get(dep_seg["arrival"]["iataCode"], dep_seg["arrival"]["iataCode"])
                 carrier = AIRLINE_NAMES.get(dep_seg["carrierCode"], dep_seg["carrierCode"])
                 flight_num = f"{dep_seg['carrierCode']}{dep_seg['number']}"
                 aircraft = AIRCRAFT_MODELS.get(dep_seg["aircraft"]["code"], dep_seg["aircraft"]["code"])
-                
                 price = int(float(flight["price"]["total"]))
                 dep_t = dep_seg["departure"]["at"][11:16]
                 ret_t = ret_seg["departure"]["at"][11:16]
                 seats = flight.get("numberOfBookableSeats", "?")
 
-                # 按照您要求的精確格式輸出
-                report += f"\n📅 {dep} ~ {ret}"
-                report += f"\n🗺️ 航線: {origin} ✈️ {dest}"
-                report += f"\n✈️ 航班: {carrier} {flight_num}"
-                report += f"\n🛸 機型: {aircraft} | 💺 剩餘: {seats}位"
-                report += f"\n💰 總價: TWD {price} (來回含稅)"
-                report += f"\n⏰ 去:{dep_t} | 回:{ret_t}"
-                report += "\n----------------------------"
+                # --- 您要求的精確版面 ---
+                report += f"\n\n📅 {dep_short} → {ret_short}"
+                report += f"\n✈️ {carrier} {flight_num}"
+                report += f"\n🗺️ {origin} → {dest}"
+                report += f"\n⏰ {dep_t} ｜ {ret_t}"
+                report += f"\n🛸 {aircraft} ｜ 💺 {seats}"
+                report += f"\n💰 TWD {price}"
+                report += "\n\n━━━━━━━━━━━━━━"
                 found_any = True
         except: continue
 
     monthly_usage = (query_count * 3 * 30)
-    report += f"\n📊 額度預估: {monthly_usage} / {FREE_QUOTA_LIMIT}"
+    report += f"\n\n📊 API 使用預估\n{monthly_usage} / {FREE_QUOTA_LIMIT}"
 
     if found_any:
         send_line_push(report)
     else:
-        send_line_push("🤖 測試成功：連線正常，但目前 Sandbox 庫中無捷星 2026 年 5 月數據。")
+        # 測試訊息也同步版面格式
+        test_msg = f"🚀【捷星黃金時段監控 {now_str}】\n━━━━━━━━━━━━━━\n\n🤖 測試成功：連線正常，但目前 Sandbox 庫中無 2026 年數據。\n\n━━━━━━━━━━━━━━\n\n📊 API 使用預估\n{monthly_usage} / {FREE_QUOTA_LIMIT}"
+        send_line_push(test_msg)
 
 if __name__ == "__main__":
     check_flights()
