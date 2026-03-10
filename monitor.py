@@ -2,38 +2,46 @@ import requests
 import os
 from datetime import datetime
 
-# --- 專業設定區 ---
-FREE_QUOTA_LIMIT = 2000  # Amadeus 每月免費額度上限
+# --- 測試環境設定 ---
+FREE_QUOTA_LIMIT = 2000 
 
 def send_line_notification(message):
     token = os.getenv('LINE_TOKEN')
+    if not token:
+        print("❌ 錯誤: 找不到 LINE_TOKEN 變數")
+        return
     url = "https://notify-api.line.me/api/notify"
     headers = {"Authorization": f"Bearer {token}"}
     data = {"message": message}
-    requests.post(url, headers=headers, data=data)
+    res = requests.post(url, headers=headers, data=data)
+    print(f"📢 LINE 通知發送狀態: {res.status_code}")
 
 def get_amadeus_token():
     key = os.getenv('AMADEUS_KEY')
     secret = os.getenv('AMADEUS_SECRET')
-    # 生產環境 Token 網址 (簽署合約後專用)
-    auth_url = "https://api.amadeus.com/v1/security/oauth2/token"
+    # ⚠️ 這裡使用 TEST 網址
+    auth_url = "https://test.api.amadeus.com/v1/security/oauth2/token"
     try:
         res = requests.post(auth_url, data={
             "grant_type": "client_credentials",
             "client_id": key,
             "client_secret": secret
         })
-        return res.json().get("access_token")
-    except:
+        token = res.json().get("access_token")
+        if token:
+            print("✅ 成功取得 Sandbox Token")
+        return token
+    except Exception as e:
+        print(f"❌ Token 取得失敗: {e}")
         return None
 
 def check_flights():
     token = get_amadeus_token()
     if not token:
-        print("Error: 無法取得 Production Token。請檢查 GitHub Secrets 中的金鑰。")
+        send_line_notification("\n❌ 無法取得 Sandbox Token，請檢查 API Key。")
         return
 
-    # 依照您要求更新的 8 組精確去回日期 (滯留 10 天以上)
+    # 您的 8 組測試日期
     date_pairs = [
         ("2026-05-19", "2026-06-03"), ("2026-05-19", "2026-06-05"),
         ("2026-05-20", "2026-06-03"), ("2026-05-20", "2026-06-05"),
@@ -41,27 +49,23 @@ def check_flights():
         ("2026-05-27", "2026-06-10"), ("2026-05-27", "2026-06-11")
     ]
 
-    report = "\n🚀【捷星黃金時段 - 精準監控報表】\n"
+    report = "\n🧪【Sandbox 測試模式 - 機票監控】\n"
     report += "----------------------------"
     
     query_count = 0 
     found_any = False
 
     for dep, ret in date_pairs:
-        d1 = datetime.strptime(dep, "%Y-%m-%d")
-        d2 = datetime.strptime(ret, "%Y-%m-%d")
-        stay_days = (d2 - d1).days
-
-        # 正式環境查詢網址
-        url = "https://api.amadeus.com/v2/shopping/flight-offers"
+        # ⚠️ 這裡使用 TEST 網址
+        url = "https://test.api.amadeus.com/v2/shopping/flight-offers"
         params = {
             "originLocationCode": "TPE",
             "destinationLocationCode": "NRT",
             "departureDate": dep,
             "returnDate": ret,
             "adults": 1,
-            "includedAirlineCodes": "GK,3K", # 指定捷星
-            "nonStop": "true",               # 強制直飛
+            "includedAirlineCodes": "GK,3K",
+            "nonStop": "false",  # 測試環境改為 false 以增加搜尋機率
             "currencyCode": "TWD",
             "max": 1                         
         }
@@ -78,24 +82,24 @@ def check_flights():
                 ret_time = flight["itineraries"][1]["segments"][0]["departure"]["at"][11:16]
                 seats = flight.get("numberOfBookableSeats", "不明")
 
-                report += f"\n📅 {dep} ~ {ret} ({stay_days}天)"
-                report += f"\n💰 總價: TWD {price} (來回含稅)"
-                report += f"\n⏰ 去:{dep_time} | 回:{ret_time} | 💺:{seats}位"
+                report += f"\n📅 {dep} ~ {ret}"
+                report += f"\n💰 模擬總價: TWD {price}"
+                report += f"\n⏰ 去:{dep_time} | 回:{ret_time} | 💺:{seats}"
                 report += "\n----------------------------"
                 found_any = True
-        except:
-            continue
+            else:
+                print(f"ℹ️ 日期 {dep} 在測試庫中無數據")
+        except Exception as e:
+            print(f"⚠️ 查詢 {dep} 出錯: {e}")
 
-    # --- 額度計算區 ---
-    # 每天跑 3 次，一個月 30 天的預估
+    # 額度報告
     monthly_usage = (query_count * 3 * 30)
-    remaining = FREE_QUOTA_LIMIT - monthly_usage
-    
-    report += f"\n📊 額度報告：每月預估消耗 {monthly_usage}/{FREE_QUOTA_LIMIT}"
-    report += f"\n安全狀態: {'✅ 正常' if remaining > 0 else '⚠️ 警告'}"
+    report += f"\n📊 測試額度預估: 每月消耗 {monthly_usage}/{FREE_QUOTA_LIMIT}"
 
     if found_any:
         send_line_notification(report)
+    else:
+        send_line_notification("\n🧪 測試成功，但當前日期組合在 Sandbox 庫中無模擬票價。")
 
 if __name__ == "__main__":
     check_flights()
