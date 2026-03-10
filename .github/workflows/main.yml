@@ -1,14 +1,14 @@
-name: Japan Flight Monitor
+name: Japan Flight Monitor (Test Mode)
 
 on:
   schedule:
-    # 台灣 05:15 (UTC 21:15 前一天) - 系統清位子黃金期
+    # 台灣 05:15 (UTC 21:15)
     - cron: '15 21 * * *'
-    # 台灣 14:30 (UTC 06:30) - 航空公司下午手動調價期
+    # 台灣 14:30 (UTC 06:30)
     - cron: '30 6 * * *'
-    # 台灣 23:45 (UTC 15:45) - 深夜未付款訂單最後釋出
+    # 台灣 23:45 (UTC 15:45)
     - cron: '45 15 * * *'
-  workflow_dispatch: # 允許您在 GitHub 網頁手動點擊執行
+  workflow_dispatch: # 這是手動測試最重要的開關
 
 jobs:
   build:
