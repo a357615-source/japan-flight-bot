@@ -4,7 +4,6 @@ import json
 from datetime import datetime
 
 # --- 專業設定區 ---
-# Amadeus 每月免費額度上限 (2000次)
 FREE_QUOTA_LIMIT = 2000 
 
 def send_line_push(text_content):
@@ -32,19 +31,20 @@ def send_line_push(text_content):
             print(f"✅ LINE 訊息推播成功！")
         else:
             print(f"⚠️ LINE 推送失敗，狀態碼: {res.status_code}, 內容: {res.text}")
+            print("💡 提醒：請確認您的手機已『加入好友』該機器人，否則 Push 會失敗。")
     except Exception as e:
         print(f"❌ LINE 請求異常: {e}")
 
 def get_amadeus_token():
-    """取得 Amadeus OAuth2 Token"""
+    """取得 Amadeus OAuth2 Token (測試環境專用)"""
     key = os.getenv('AMADEUS_KEY')
     secret = os.getenv('AMADEUS_SECRET')
     
-    # --- 關鍵切換：若使用 Sandbox 金鑰，請將 api 改成 test.api ---
-    auth_url = "https://api.amadeus.com/v1/security/oauth2/token"
+    # ⚠️ 重要：測試環境網址
+    auth_url = "https://test.api.amadeus.com/v1/security/oauth2/token"
     
     try:
-        print("正在取得 Amadeus Token...")
+        print("正在取得 Sandbox Token...")
         res = requests.post(auth_url, data={
             "grant_type": "client_credentials",
             "client_id": key,
@@ -55,6 +55,7 @@ def get_amadeus_token():
             print(f"❌ Token 取得失敗: {res.text}")
             return None
             
+        print("✅ Sandbox Token 取得成功！")
         return res.json().get("access_token")
     except Exception as e:
         print(f"❌ Amadeus 連線異常: {e}")
@@ -63,10 +64,10 @@ def get_amadeus_token():
 def check_flights():
     token = get_amadeus_token()
     if not token:
-        print("❌ 終止執行：無法取得有效 Token，請確認 AMADEUS_KEY 是否正確。")
+        print("❌ 終止執行：無法取得有效 Token。請檢查 AMADEUS_KEY 是否為 Sandbox 版本。")
         return 
 
-    # 您要求的 8 組 2026 年 5 月日期
+    # 測試日期的 8 組組合
     date_pairs = [
         ("2026-05-19", "2026-06-03"), ("2026-05-19", "2026-06-05"),
         ("2026-05-20", "2026-06-03"), ("2026-05-20", "2026-06-05"),
@@ -74,21 +75,17 @@ def check_flights():
         ("2026-05-27", "2026-06-10"), ("2026-05-27", "2026-06-11")
     ]
 
-    report = "🚀【捷星黃金時段 - 精準監控報表】\n"
+    report = "🧪【Sandbox 測試模式 - 監控報表】\n"
     report += "----------------------------"
     
     found_any = False
     query_count = 0 
     
-    print(f"開始查詢 {len(date_pairs)} 組日期組合...")
+    print(f"開始在測試庫查詢 {len(date_pairs)} 組日期...")
 
     for dep, ret in date_pairs:
-        d1 = datetime.strptime(dep, "%Y-%m-%d")
-        d2 = datetime.strptime(ret, "%Y-%m-%d")
-        stay_days = (d2 - d1).days
-
-        # --- 關鍵切換：若使用 Sandbox 金鑰，請將 api 改成 test.api ---
-        url = "https://api.amadeus.com/v2/shopping/flight-offers"
+        # ⚠️ 重要：測試環境網址
+        url = "https://test.api.amadeus.com/v2/shopping/flight-offers"
         params = {
             "originLocationCode": "TPE", 
             "destinationLocationCode": "NRT",
@@ -96,7 +93,7 @@ def check_flights():
             "returnDate": ret,
             "adults": 1, 
             "includedAirlineCodes": "GK,3K",
-            "nonStop": "true",
+            "nonStop": "false", # 測試環境建議 false，增加抓到模擬資料的機率
             "currencyCode": "TWD", 
             "max": 1                         
         }
@@ -110,29 +107,21 @@ def check_flights():
                 price = int(float(flight["price"]["total"]))
                 dep_t = flight["itineraries"][0]["segments"][0]["departure"]["at"][11:16]
                 ret_t = flight["itineraries"][1]["segments"][0]["departure"]["at"][11:16]
-                seats = flight.get("numberOfBookableSeats", "不明")
-
-                report += f"\n📅 {dep} ~ {ret} ({stay_days}天)"
-                report += f"\n💰 總價: TWD {price} (來回含稅)"
-                report += f"\n⏰ 去:{dep_t} | 回:{ret_t} | 💺:{seats}位"
-                report += "\n----------------------------"
+                
+                report += f"\n📅 {dep} ~ {ret}\n💰 模擬票價: TWD {price}\n⏰ 去:{dep_t} | 回:{ret_t}\n----------------------------"
                 found_any = True
-            else:
-                print(f"ℹ️ 日期 {dep} 查無捷星直飛航班。")
-        except Exception as e:
-            print(f"⚠️ 查詢日期 {dep} 時發生錯誤: {e}")
+        except:
             continue
 
-    # 額度計算
+    # 額度預算
     monthly_usage = (query_count * 3 * 30)
-    report += f"\n📊 額度預估: {monthly_usage} / {FREE_QUOTA_LIMIT}"
-    report += f"\n狀態: {'✅ 安全' if monthly_usage < FREE_QUOTA_LIMIT else '⚠️ 警告'}"
+    report += f"\n📊 測試額度預估: {monthly_usage} / {FREE_QUOTA_LIMIT}"
 
     if found_any:
         send_line_push(report)
     else:
-        # 強制發送測試訊息，確保您知道機器人有在跑
-        send_line_push("🤖 監控報告：連線成功，但目前您設定的 8 組日期在捷星官網暫無直飛票價資訊。")
+        # 測試期間強制發送，確保您知道通道是通的
+        send_line_push("🤖 測試連線成功！\n程式運作正常，但目前 Sandbox 模擬庫中沒有您設定的日期數據。")
 
 if __name__ == "__main__":
     check_flights()
